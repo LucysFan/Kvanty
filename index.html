@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Синтез фазового ДОЭ — интерактивный дашборд</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ================= H. Шапка ================= -->
+  <header id="header">
+    <div class="brand">
+      <div class="logo">ДОЭ</div>
+      <div class="brand-text">
+        <h1>Синтез фазового ДОЭ для четырёхплоскостного восстановления изображений</h1>
+        <div class="sub">сеть с физикой внутри → маска 128×128 → четыре плоскости</div>
+      </div>
+      <div class="variant-switch" title="Глобальный переключатель метода (п. 12.5.7)">
+        <button data-variant="nn" class="active">NN</button>
+        <button data-variant="gs">GS</button>
+      </div>
+    </div>
+    <div class="params" id="params"></div>
+    <div class="badges" id="badges"></div>
+  </header>
+
+  <main>
+    <!-- ================= 1. Цели ================= -->
+    <section class="panel p-targets" id="panel-targets">
+      <div class="panel-head"><span class="num">1</span><h2>Цели</h2>
+      </div>
+      <div class="targets-grid" id="targets-grid"></div>
+      <div class="target-caption" id="target-caption"></div>
+    </section>
+
+    <!-- ================= 2. ДОЭ ================= -->
+    <section class="panel p-doe" id="panel-doe">
+      <div class="panel-head"><span class="num">2</span><h2>ДОЭ</h2>
+        <div class="head-tools">
+          <label class="chk"><input type="checkbox" id="doe-quant" checked> 8 бит</label>
+          <button id="doe-flash" title="A6: вспышка разницы float ↔ 8 бит">вспышка Δ</button>
+        </div>
+      </div>
+      <div class="doe-row">
+        <div class="doe-view">
+          <canvas id="doe-phase" width="256" height="256" class="frame"></canvas>
+          <div class="scale-bar"><span>−π</span><div class="cyclic-scale"></div><span>+π</span></div>
+        </div>
+        <div class="doe-side">
+          <canvas id="doe-gray" width="128" height="128" class="frame small"></canvas>
+          <div class="doe-note" id="doe-note"></div>
+        </div>
+      </div>
+      <canvas id="doe-hist" height="96" class="hist"></canvas>
+      <div class="probe" id="doe-probe"></div>
+      <div class="phys-steps" id="phys-steps">
+        <div class="plot-title">сеть → физика → квантование</div>
+        <canvas id="steps-curve" height="58" class="steps-curve"></canvas>
+        <div class="steps-row" id="steps-row"></div>
+        <div class="probe" id="steps-probe"></div>
+      </div>
+    </section>
+
+    <!-- ================= 3. Пропагация ================= -->
+    <section class="panel p-prop" id="panel-prop">
+      <div class="panel-head"><span class="num">3</span><h2>Пропагация z-свип</h2>
+        <div class="head-tools">
+          <button id="prop-play" class="primary">⏸ пауза</button>
+          <label class="rng" title="скорость свипа"><input type="range" id="prop-speed" min="0.25" max="4" step="0.25" value="1"><span id="prop-speed-val">×1</span></label>
+          <label class="chk" title="зациклить свип"><input type="checkbox" id="prop-loop" checked>⟳</label>
+          <label class="chk" title="пауза на рабочих z_i"><input type="checkbox" id="prop-autopause" checked>z<sub>i</sub>⏸</label>
+        </div>
+      </div>
+      <div class="prop-row">
+        <div class="prop-view">
+          <canvas id="prop-canvas" width="320" height="320" class="frame"></canvas>
+          <div class="probe" id="prop-probe"></div>
+        </div>
+        <svg id="cone" class="cone" viewBox="0 0 220 320" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <div class="zscale" id="zscale">
+        <div class="zscale-track" id="zscale-track"></div>
+        <input type="range" id="prop-slider" min="0" max="100" step="1" value="0">
+      </div>
+      <div class="z-readout" id="z-readout"></div>
+    </section>
+
+    <!-- ================= 4. Плоскости ================= -->
+    <section class="panel p-planes" id="panel-planes">
+      <div class="panel-head"><span class="num">4</span><h2>Плоскости: цель ↔ реконструкция</h2>
+        <div class="head-tools seg" id="plane-mode">
+          <button data-mode="swipe" class="active">шторка</button>
+          <button data-mode="side">side-by-side</button>
+          <button data-mode="blend">blend</button>
+          <button data-mode="diff">разница</button>
+        </div>
+      </div>
+      <div class="planes-grid" id="planes-grid"></div>
+    </section>
+
+    <!-- ================= 5. Метрики ================= -->
+    <section class="panel p-metrics" id="panel-metrics">
+      <div class="panel-head"><span class="num">5</span><h2>Метрики</h2>
+        <div class="head-tools seg" id="protocol-switch">
+          <button data-proto="primary" class="active">основной</button>
+          <button data-proto="reference">справочный</button>
+        </div>
+      </div>
+      <div class="metrics-counters" id="metrics-counters">
+        <div class="counter"><div class="k">PCC, активная плоскость</div><div class="v" id="c-pcc">—</div></div>
+        <div class="counter"><div class="k">SSIM, активная плоскость</div><div class="v" id="c-ssim">—</div></div>
+        <div class="counter"><div class="k">среднее NN</div><div class="v" id="c-mean-nn" style="font-size:15px;color:var(--nn)">—</div></div>
+        <div class="counter"><div class="k">среднее GS</div><div class="v" id="c-mean-gs" style="font-size:15px;color:var(--gs)">—</div></div>
+      </div>
+      <div class="metrics-bars" id="metrics-bars"></div>
+      <div class="metrics-tables" id="metrics-tables"></div>
+    </section>
+
+    <!-- ================= 6. Измерения ================= -->
+    <section class="panel p-meas" id="panel-meas">
+      <div class="panel-head"><span class="num">6</span><h2>Измерения</h2>
+        <div class="head-tools seg" id="meas-mode">
+          <button data-mmode="probe" class="active">зонд</button>
+          <button data-mmode="roi">ROI</button>
+          <button data-mmode="zprobe">z-зонд</button>
+        </div>
+      </div>
+      <div class="meas-grid">
+        <div class="meas-img">
+          <canvas id="meas-canvas" width="320" height="320" class="frame"></canvas>
+          <div class="probe" id="meas-probe"></div>
+        </div>
+        <div class="meas-plots">
+          <div class="plot-title">профиль H <span id="prof-h-val"></span></div>
+          <canvas id="prof-h" height="90" class="plot"></canvas>
+          <div class="plot-title">профиль V <span id="prof-v-val"></span></div>
+          <canvas id="prof-v" height="90" class="plot"></canvas>
+          <div class="plot-title">z-зонд I(z) <span id="zprobe-val"></span></div>
+          <canvas id="zprobe" height="110" class="plot"></canvas>
+          <div class="roi-readout" id="roi-readout"></div>
+        </div>
+      </div>
+      <div class="meas-bottom">
+        <div>
+          <div class="plot-title">локальная SSIM-карта (окно 11×11)</div>
+          <canvas id="ssim-canvas" width="160" height="160" class="frame small"></canvas>
+        </div>
+        <div class="zruler" id="zruler"></div>
+      </div>
+    </section>
+
+    <!-- ================= 7. Обучение ================= -->
+    <section class="panel p-train" id="panel-train">
+      <div class="panel-head"><span class="num">7</span><h2>Обучение</h2>
+        <div class="head-tools">
+          <button id="train-play">▶ play</button>
+          <span class="hint" id="train-step-label"></span>
+        </div>
+      </div>
+      <div class="train-grid">
+        <div class="train-frames">
+          <div><div class="plot-title">маска</div><canvas id="train-mask" width="160" height="160" class="frame small"></canvas></div>
+          <div><div class="plot-title">реконструкция z₂</div><canvas id="train-recon" width="160" height="160" class="frame small"></canvas></div>
+        </div>
+        <div class="train-curve">
+          <canvas id="train-loss" height="150" class="plot"></canvas>
+          <input type="range" id="train-slider" min="0" max="0" step="1" value="0">
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 8. Физика ================= -->
+    <section class="panel p-phys" id="panel-phys">
+      <div class="panel-head"><span class="num">8</span><h2>Физика</h2>
+        <div class="head-tools"><button id="phys-modal" class="mini">таблица 4.7</button></div>
+      </div>
+      <div class="phys-grid">
+        <div class="phys-crit">
+          <div class="plot-title">положение z₁…z₄ относительно z<sub>crit</sub></div>
+          <canvas id="crit-canvas" height="120" class="plot"></canvas>
+          <div class="crit-note" id="crit-note"></div>
+          <div class="plot-title">тест линзы (z = z₁): профиль через центр</div>
+          <canvas id="lens-canvas" height="110" class="plot"></canvas>
+        </div>
+        <div class="phys-table" id="phys-table"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="footer-info"></span>
+    <span class="fps" id="fps">—</span>
+    <button class="run-btn hidden" id="run-btn" title="запустить этапы конвейера (R)">▶ запуск</button>
+  </footer>
+</div>
+
+<!-- модальное окно тестов -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><h3 id="modal-title"></h3><button id="modal-close">×</button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- пульт запуска задач (работает при запуске через scripts/serve_dashboard.py) -->
+<div id="runpanel" class="runpanel hidden">
+  <div class="runpanel-head">
+    <h3>Запуск задач</h3>
+    <span class="rp-status" id="rp-status">готов</span>
+    <button id="rp-close" title="закрыть">×</button>
+  </div>
+  <div class="rp-pipelines" id="rp-pipelines"></div>
+  <div class="rp-stages" id="rp-stages"></div>
+  <div class="rp-upload">
+    <label class="rp-drop" id="rp-drop">
+      <input type="file" id="rp-file" accept="image/*">
+      <span>перетащить картинку или выбрать файл — станет целью</span>
+    </label>
+  </div>
+  <div class="rp-logbar">
+    <span class="rp-logtitle">лог</span>
+    <button id="rp-copy" class="mini">копировать</button>
+    <button id="rp-stop" class="mini">■ стоп</button>
+  </div>
+  <pre id="rp-log" class="rp-log"></pre>
+</div>
+
+<!-- подпись авто-тура -->
+<div id="tour" class="tour hidden">
+  <div class="tour-step" id="tour-step"></div>
+  <div class="tour-text" id="tour-text"></div>
+  <div class="tour-bar"><div id="tour-progress"></div></div>
+</div>
+
+<script src="data_bundle.js" onerror="window.__bundleMissing=true"></script>
+<script src="app.js"></script>
+</body>
+</html>
